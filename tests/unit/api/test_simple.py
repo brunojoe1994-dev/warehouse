@@ -13,7 +13,6 @@ from warehouse.packaging.utils import API_VERSION, _valid_simple_detail_context
 
 from ...common.db.accounts import UserFactory
 from ...common.db.packaging import (
-    AlternateRepositoryFactory,
     FileFactory,
     JournalEntryFactory,
     ProjectFactory,
@@ -210,7 +209,6 @@ class TestSimpleDetail:
             "project-status": {"status": "active"},
             "files": [],
             "versions": [],
-            "alternate-locations": [],
         }
         context = _update_context(context, content_type, renderer_override)
         assert simple.simple_detail(project, db_request) == context
@@ -232,10 +230,6 @@ class TestSimpleDetail:
         db_request.matchdict["name"] = project.normalized_name
         user = UserFactory.create()
         je = JournalEntryFactory.create(name=project.name, submitted_by=user)
-        als = [
-            AlternateRepositoryFactory.create(project=project),
-            AlternateRepositoryFactory.create(project=project),
-        ]
 
         context = {
             "meta": {"_last-serial": je.id, "api-version": API_VERSION},
@@ -243,7 +237,6 @@ class TestSimpleDetail:
             "project-status": {"status": "active"},
             "files": [],
             "versions": [],
-            "alternate-locations": sorted(al.url for al in als),
         }
         context = _update_context(context, content_type, renderer_override)
         assert simple.simple_detail(project, db_request) == context
@@ -296,7 +289,6 @@ class TestSimpleDetail:
                 }
                 for f in files
             ],
-            "alternate-locations": [],
         }
         context = _update_context(context, content_type, renderer_override)
         assert simple.simple_detail(project, db_request) == context
@@ -349,7 +341,6 @@ class TestSimpleDetail:
                 }
                 for f in files
             ],
-            "alternate-locations": [],
         }
         context = _update_context(context, content_type, renderer_override)
         assert simple.simple_detail(project, db_request) == context
@@ -447,7 +438,6 @@ class TestSimpleDetail:
                 }
                 for f in files
             ],
-            "alternate-locations": [],
         }
         context = _update_context(context, content_type, renderer_override)
         assert simple.simple_detail(project, db_request) == context
@@ -480,7 +470,6 @@ class TestSimpleDetail:
             "project-status": {"status": "quarantined"},
             "files": [],
             "versions": [],
-            "alternate-locations": [],
         }
         context = _update_context(context, content_type, renderer_override)
 
@@ -513,7 +502,6 @@ class TestSimpleDetail:
             "project-status": {"status": "archived"},
             "files": [],
             "versions": [],
-            "alternate-locations": [],
         }
         context = _update_context(context, content_type, renderer_override)
 
@@ -539,7 +527,6 @@ class TestSimpleDetail:
             "project-status": {"status": "active"},
             "files": [],
             "versions": [],
-            "alternate-locations": [],
         }
         context = _update_context(context, content_type, renderer_override)
 
@@ -660,7 +647,6 @@ class TestSimpleDetail:
                 }
                 for f in files
             ],
-            "alternate-locations": [],
         }
         context = _update_context(context, content_type, renderer_override)
 

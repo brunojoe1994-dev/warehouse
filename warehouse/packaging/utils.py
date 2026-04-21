@@ -66,9 +66,6 @@ def _simple_detail(project, request):
     versions = sorted(
         {f.release.version for f in files}, key=packaging_legacy.version.parse
     )
-    alternate_repositories = sorted(
-        alt_repo.url for alt_repo in project.alternate_repositories
-    )
 
     return {
         "meta": {"api-version": API_VERSION, "_last-serial": project.last_serial},
@@ -79,7 +76,6 @@ def _simple_detail(project, request):
             }
         ),
         "versions": versions,
-        "alternate-locations": alternate_repositories,
         "files": [
             {
                 "filename": file.filename,
@@ -171,5 +167,4 @@ def render_simple_detail(project, request, store=False):
 
 def _valid_simple_detail_context(context: dict) -> dict:
     context["project_status"] = context.pop("project-status", None)
-    context["alternate_locations"] = context.pop("alternate-locations", [])
     return context

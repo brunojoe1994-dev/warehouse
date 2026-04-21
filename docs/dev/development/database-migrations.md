@@ -20,13 +20,93 @@ Then migrate and test your migration:
 make runmigrations
 ```
 
-Migrations are automatically run as part of the deployment process, but prior
-to the old version of Warehouse from being shut down. This means that each
-migration *must* be compatible with the current `main` branch of Warehouse.
+## Release phase vs. post-deploy phase
 
-This makes it more difficult to make breaking changes, since you must phase
-them in over time. See [Destructive migrations](#destructive-migrations) for tips on doing
-migrations that involve column deletions or renames.
+Migrations are run in one of two phases, depending on which branch they live on
+in Alembic:
+
+- **`release` (pre-deploy)** — runs before the new version of Warehouse is
+  rolled out, while the *previous* version is still serving traffic. Every
+  migration on this branch must be compatible with the currently-deployed
+  code. This is the default and matches the historical behavior.
+- **`post_deploy`** — runs after the new version of Warehouse is fully rolled
+  out. Migrations on this branch may assume the new code is live, which makes
+  them the right place for backfills, or for dropping columns/tables that the
+  old code still reads.
+
+Under the hood this is implemented with two Alembic branches, each with its own
+head. The release-phase deploy script (`bin/release`) runs
+`warehouse db upgrade release@head`; the post-deploy script
+(`bin/postdeploy`) runs `warehouse db upgrade post_deploy@head`.
+
+You can see both heads at any time with:
+
+```shell
+docker compose run web python -m warehouse db heads
+```
+
+### Picking a phase
+
+Default to the **release** phase. It's the right choice for the overwhelming
+majority of migrations: anything that adds new structure the new code will
+start using, as long as the structure is also ignorable by the old code (e.g.
+adding a nullable column, adding a new table, adding an index, backfilling a
+column that the old code doesn't read or write).
+
+Only reach for the **post_deploy** phase when a migration is *unsafe* to run
+before the new code is live — i.e. it would break the old code, or it can
+only produce a correct result once the new code is serving all traffic.
+Typical cases:
+
+- Dropping a column, table, or constraint that the old code still references.
+- Adding a `NOT NULL` constraint on a column the old code doesn't populate
+  (old-code writes between pre-deploy and cutover would violate it).
+- Cleanup backfills that need to sweep up rows written by the old code after
+  an earlier bulk backfill ran.
+
+Backfills themselves aren't inherently post-deploy. A backfill of a column
+the old code ignores can run in the release phase. A backfill may also be
+split across phases — e.g. a bulk copy in release phase plus a small sweep
+in post-deploy to catch rows the old code wrote during rollout.
+
+### Authoring a migration in the post-deploy phase
+
+Pass `--head post_deploy@head` so Alembic bases the new revision on the tip
+of the post-deploy branch:
+
+```shell
+docker compose run web python -m warehouse db revision \
+    --autogenerate \
+    --message "drop foo table" \
+    --head post_deploy@head
+```
+
+Do **not** pass `--branch-label post_deploy` — the label lives on the branch
+root only. Subsequent revisions inherit the branch by virtue of chaining off
+`post_deploy@head`, and Alembic will reject a second revision that tries to
+claim the same label.
+
+For the release phase, no extra flags are required — the default behavior
+targets `release@head`.
+
+!!! warning
+    Don't mix phases inside a single revision. If a change has both a
+    pre-deploy and a post-deploy step (e.g. "add column" + "backfill"), write
+    two revisions, one on each branch.
+
+### Cross-branch dependencies
+
+Post-deploy migrations commonly depend on a release-phase migration that landed
+in the same PR (e.g. the post-deploy backfill needs the release-phase column
+to already exist). Record the dependency explicitly with `depends_on` so
+Alembic can't reorder them:
+
+```python
+revision = "abc123456789"
+down_revision = "def456789abc"  # previous post_deploy revision
+branch_labels = None
+depends_on = ("fed987654321",)  # the release-phase revision this relies on
+```
 
 ## Migration Timeouts
 
@@ -66,42 +146,50 @@ environment like PyPI, there is related reading available at:
     attempting to follow them! Failure to do so can result in serious
     deployment errors and outages.
 
-Migrations that do column renames or deletions need to be performed
-with special care, due to how Warehouse is deployed. Performing a
-migration without these steps will cause errors during deployment,
-and may require a full revert.
+Migrations that do column renames or deletions need to be performed with
+special care, because the pre-deploy (`release`) phase runs while the old
+version of Warehouse is still serving traffic. The `post_deploy` phase makes
+these flows significantly simpler than they used to be.
 
 ### Removing a column
 
-To remove a column:
+With the post-deploy phase, a column removal can ship in a single PR:
 
-1. Perform the Python-level code changes, i.e. remove usages of the
-   column/attribute within Warehouse itself. Do **not** generate
-   an accompanying migration.
-2. Submit the changes as a PR. Tag the PR with `skip-db-check` to allow
-   it to pass CI without accompanying migrations.
-3. Prepare a second PR containing just the generated migrations.
-4. Merge the first PR and ensure its deployment before merging the second.
+1. Remove usages of the column from the Python code.
+2. Autogenerate a `post_deploy` migration that drops the column:
 
-This will ensure that the "old" version of Warehouse (prior to the new migration
-has no references to the column being deleted).
+    ```shell
+    docker compose run web python -m warehouse db revision \
+        --autogenerate \
+        --message "drop foo.bar" \
+        --head post_deploy@head
+    ```
+
+3. Submit the code change and the migration together in one PR.
+
+Because the drop runs post-deploy, the old version of Warehouse (which still
+reads the column) is no longer serving traffic by the time the column
+disappears.
 
 ### Renaming a column
 
-Renaming a column is more complex than deleting a column, since it involves
-a data migration. To rename a column:
+Renaming a column is a data migration, so it still takes multiple deploys:
 
-1. Create an initial migration that adds the new column, and add code that
-   writes to the new column while reading from both it and the old column.
-2. Deploy the initial migration.
-3. Prepare a second migration that performs a backfill of the old column to
-   the new column.
-4. Deploy the second migration.
-5. Follow the [Removing a column](#removing-a-column) steps *in entirety* to remove the old
-   column.
+1. **Deploy 1 — add the new column + dual-write.** Add a release-phase
+   migration that creates the new column, and add code that writes to the new
+   column while reading from both it and the old one.
+2. **Deploy 2 — backfill, then switch reads.** Add a migration that copies
+   values from the old column to the new one. Either phase works:
+    - **Release phase** is simpler and is fine as long as the code is already
+      dual-writing (any rows the old version writes during this deploy's
+      rollout still land in both columns).
+    - **Post-deploy phase** is slightly safer if you're worried about
+      in-flight writes: after rollout finishes, the new code is the only
+      writer, and the backfill runs over a stable snapshot.
 
-In total, this requires three separate migrations: one to add the new column,
-one to backfill to it, and a third to remove the old column.
+    In the same deploy, switch reads over to the new column only.
+3. **Deploy 3 — drop the old column.** Follow [Removing a
+   column](#removing-a-column) *in entirety* to drop the old column.
 
 ## Creating Indexes
 

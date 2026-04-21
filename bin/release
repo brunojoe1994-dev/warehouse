@@ -3,8 +3,12 @@
 # Fail fast and fail hard.
 set -eo pipefail
 
-# Migrate our database to the latest revision.
-python -m warehouse db upgrade head
+# Migrate the database up to the latest revision on the release branch. This
+# runs before the new code is live, so every migration reached here must remain
+# compatible with the currently-deployed version of Warehouse. Migrations that
+# require the new code to already be running live on the post_deploy branch and
+# are applied by bin/postdeploy.
+python -m warehouse db upgrade release@head
 
 # Insert/upgrade classifiers.
 python -m warehouse classifiers sync

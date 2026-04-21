@@ -11,6 +11,9 @@ if [ -n "$GITHUB_ACTIONS" ]; then
   fi
 fi
 
-# Check for outstanding database migrations
-python -m warehouse db upgrade head
+# Check for outstanding database migrations. Apply both branches in the same
+# order the deploy pipeline does (release, then post_deploy) before asking
+# alembic to check the schema.
+python -m warehouse db upgrade release@head
+python -m warehouse db upgrade post_deploy@head
 python -m warehouse db check

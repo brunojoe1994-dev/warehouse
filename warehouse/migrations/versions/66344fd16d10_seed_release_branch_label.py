@@ -1,21 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 """
-${message}
+Seed release branch label
 
-Revision ID: ${up_revision}
-Revises: ${down_revision}
-Create Date: ${create_date}
+Revision ID: 66344fd16d10
+Revises: b8e6e0867168
+Create Date: 2026-04-21 17:27:29.126731
 """
 
 import sqlalchemy as sa
 
 from alembic import op
-${imports if imports else ""}
 
-revision = ${repr(up_revision)}
-down_revision = ${repr(down_revision)}
-branch_labels = ${repr(branch_labels)}
-depends_on = ${repr(depends_on)}
+revision = "66344fd16d10"
+down_revision = "b8e6e0867168"
+branch_labels = ("release",)
+depends_on = None
 
 # Note: It is VERY important to ensure that a migration does not lock for a
 #       long period of time and to ensure that each individual migration does
@@ -41,8 +40,8 @@ depends_on = ${repr(depends_on)}
 
 
 def upgrade():
-    ${upgrades if upgrades else "pass"}
+    pass
 
 
 def downgrade():
-    ${downgrades if downgrades else "pass"}
+    pass

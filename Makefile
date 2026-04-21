@@ -159,7 +159,8 @@ inittuf: .state/db-migrated
 	docker compose run --rm web python -m warehouse tuf bootstrap dev/rstuf/bootstrap.json --api-server http://rstuf-api
 
 runmigrations: .state/docker-build-base
-	docker compose run --rm web python -m warehouse db upgrade head
+	docker compose run --rm web python -m warehouse db upgrade release@head
+	docker compose run --rm web python -m warehouse db upgrade post_deploy@head
 
 checkdb: .state/docker-build-base
 	docker compose run --rm web bin/db-check

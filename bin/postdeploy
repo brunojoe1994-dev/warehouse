@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# Fail fast and fail hard.
+set -eo pipefail
+
+# Migrate the database up to the latest revision on the post_deploy branch.
+# This runs after the new code is fully rolled out, so migrations here may
+# assume the new code is live (e.g. backfills that depend on newly-written
+# columns, dropping columns the new code no longer reads).
+python -m warehouse db upgrade post_deploy@head
